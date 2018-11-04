@@ -210,7 +210,8 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
             "id": self.getId(),
             "name": self.getName(),
             "definition": self.getMetaData().get("definition"),
-            "version": self.getMetaData().get("version", 0)
+            "version": self.getMetaData().get("version", 0),
+            "container_type": InstanceContainer
         }
         self._metadata.update(metadata)
         self._dirty = True
@@ -431,7 +432,7 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
     def _readAndValidateSerialized(cls, serialized: str) -> configparser.ConfigParser:
         # Disable comments in the ini files, so text values can start with a ;
         # without being removed as a comment
-        parser = configparser.ConfigParser(interpolation=None, comment_prefixes = ())
+        parser = configparser.ConfigParser(interpolation = None, comment_prefixes = ())
         parser.read_string(serialized)
 
         has_general = "general" in parser

@@ -8,9 +8,7 @@ import os.path
 import pytest
 import unittest.mock #For mocking the container provider priority.
 
-from UM.Application import Application
 from UM.PluginRegistry import PluginRegistry
-from UM.Signal import Signal
 from UM.VersionUpgradeManager import VersionUpgradeManager
 from UM.Resources import Resources
 from UM.MimeTypeDatabase import MimeType, MimeTypeDatabase
@@ -102,6 +100,12 @@ def test_containers_provider(container_provider: ContainerProvider, upgrade_mana
 #   To add something to this provider, add it to its `_containers` and its
 #   `_metadata` fields.
 class TestContainerProvider(ContainerProvider):
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._plugin_id = "TestContainerProvider"
+        self._version = "0.1.0"
+
     def getAllIds(self, *args, **kwargs):
         return self._containers.keys()
 

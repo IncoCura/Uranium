@@ -11,7 +11,7 @@ Item
     id: base
     width: childrenRect.width
     height: childrenRect.height
-    UM.I18nCatalog { id: catalog; name:"uranium"}
+    UM.I18nCatalog { id: catalog; name: "uranium"}
 
     // We use properties for the text as doing the bindings indirectly doesn't cause any breaks
     // Javascripts don't seem to play well with the bindings (and sometimes break em)
@@ -41,13 +41,15 @@ Item
         if(input)
         {
             return input.toFixed(decimals).replace(/\.?0*$/, ""); //Match on periods, if any ( \.? ), followed by any number of zeros ( 0* ), then the end of string ( $ ).
-        } else
+        }
+        else
         {
             return 0
         }
     }
 
-    function selectTextInTextfield(selected_item){
+    function selectTextInTextfield(selected_item)
+    {
         selected_item.selectAll()
         selected_item.focus = true
     }
@@ -72,7 +74,8 @@ Item
     }
 
 
-    Flow {
+    Flow
+    {
         id: checkboxes;
 
         anchors.left: resetScaleButton.right;

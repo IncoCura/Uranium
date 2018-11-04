@@ -137,13 +137,18 @@ class PluginRegistry(QObject):
     def _savePluginData(self) -> None:
         from UM.Settings.ContainerRegistry import ContainerRegistry
         container_registry = ContainerRegistry.getInstance()
-        with container_registry.lockFile():
-            with open(self._plugin_config_filename, "w", encoding = "utf-8") as f:
-                data = json.dumps({"disabled": self._disabled_plugins,
-                                   "to_install": self._plugins_to_install,
-                                   "to_remove": self._plugins_to_remove,
-                                   })
-                f.write(data)
+        try:
+            with container_registry.lockFile():
+                with open(self._plugin_config_filename, "w", encoding = "utf-8") as f:
+                    data = json.dumps({"disabled": self._disabled_plugins,
+                                       "to_install": self._plugins_to_install,
+                                       "to_remove": self._plugins_to_remove,
+                                       })
+                    f.write(data)
+        except:
+            # Since we're writing to file (and waiting for a lock), there are a few things that can go wrong.
+            # There is no need to crash the application for this, but it is a failure that we want to log.
+            Logger.log("e", "Unable to save the plugin data.")
 
     # TODO:
     # - [ ] Improve how metadata is stored. It should not be in the 'plugin' prop
@@ -274,10 +279,6 @@ class PluginRegistry(QObject):
 
         return self._metadata[plugin_id]
 
-    #   Get the list of plugin locations:
-    def getPluginLocations(self) -> List[str]:
-        return self._plugin_locations
-
     @pyqtSlot(str, result="QVariantMap")
     def installPlugin(self, plugin_path: str) -> Optional[Dict[str, str]]:
         plugin_path = QUrl(plugin_path).toLocalFile()
@@ -398,8 +399,8 @@ class PluginRegistry(QObject):
 
         #If API version is incompatible, don't load it.
         if self._metadata[plugin_id].get("plugin", {}).get("api", 0) != self.APIVersion:
-            Logger.log("w", "Plugin %s uses an incompatible API version, ignoring", plugin_id)
-            del self._metadata[plugin_id]
+            Logger.log("w", "Plugin %s uses an incompatible API version, disabling", plugin_id)
+            self.disablePlugin(plugin_id)
             return
 
         try:

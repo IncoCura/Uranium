@@ -138,9 +138,20 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
 
     ##  Set the complete set of metadata
     def setMetaData(self, meta_data: Dict[str, Any]) -> None:
-        if meta_data != self.getMetaData():
-            self._metadata = meta_data
-            self.metaDataChanged.emit(self)
+        if meta_data == self.getMetaData():
+            return #Unnecessary.
+
+        #We'll fill a temporary dictionary with all the required metadata and overwrite it with the new metadata.
+        #This way it is ensured that at least the required metadata is still there.
+        self._metadata = {
+            "id": self.getId(),
+            "name": self.getName(),
+            "version": self.getMetaData().get("version", 0),
+            "container_type": ContainerStack
+        }
+
+        self._metadata.update(meta_data)
+        self.metaDataChanged.emit(self)
 
     metaDataChanged = pyqtSignal(QObject)
     metaData = pyqtProperty("QVariantMap", fget = getMetaData, fset = setMetaData, notify = metaDataChanged)
@@ -304,7 +315,7 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
     #   the serialized data. Due to legacy problem, those data may not be available if it comes from an ancient Cura.
     @classmethod
     def _readAndValidateSerialized(cls, serialized: str) -> configparser.ConfigParser:
-        parser = configparser.ConfigParser(interpolation=None, empty_lines_in_values=False)
+        parser = configparser.ConfigParser(interpolation = None, empty_lines_in_values=False)
         parser.read_string(serialized)
 
         if "general" not in parser or any(pn not in parser["general"] for pn in ("version", "name", "id")):

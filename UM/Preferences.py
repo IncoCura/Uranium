@@ -193,7 +193,7 @@ class Preferences:
     ##  Extract data from string and store it in the Configuration parser.
     def deserialize(self, serialized: str) -> None:
         updated_preferences = self.__updateSerialized(serialized)
-        self._parser = configparser.ConfigParser(interpolation=None)
+        self._parser = configparser.ConfigParser(interpolation = None)
         self._parser.read_string(updated_preferences)
         has_version = "general" in self._parser and "version" in self._parser["general"]
 
@@ -224,7 +224,7 @@ class Preferences:
 
     ##  This method is still used by some external plugins and it needs to be kept as deprecated
     @classmethod
-    @deprecated("Please use the getPreferences function in Application", "3.3")
+    @deprecated("Please use Application.getInstance().getPreferences() instead", "3.3")
     def getInstance(cls) -> "Preferences":
         from UM.Application import Application
         return Application.getInstance().getPreferences()

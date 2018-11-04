@@ -24,12 +24,7 @@ from UM.View.Renderer import Renderer #For typing.
 from UM.OutputDevice.OutputDeviceManager import OutputDeviceManager
 from UM.i18n import i18nCatalog
 
-try:
-    from UM.LibraryDir import UraniumLibraryDir
-except ImportError:
-    UraniumLibraryDir = "lib"
-
-from typing import TYPE_CHECKING, Dict, List, Callable, Any, Optional
+from typing import TYPE_CHECKING, List, Callable, Any, Optional
 if TYPE_CHECKING:
     from UM.Backend.Backend import Backend
     from UM.Settings.ContainerStack import ContainerStack
@@ -49,7 +44,7 @@ class Application:
     #   \param version \type{string} Version, formatted as major.minor.rev
     #   \param build_type Additional version info on the type of build this is, such as "master".
     #   \param is_debug_mode Whether to run in debug mode.
-    def __init__(self, name: str, version: str, build_type: str = "", is_debug_mode: bool = False, **kwargs) -> None:
+    def __init__(self, name: str, version: str, app_display_name: str = "", build_type: str = "", is_debug_mode: bool = False, **kwargs) -> None:
         if Application.__instance is not None:
             raise RuntimeError("Try to create singleton '%s' more than once" % self.__class__.__name__)
         Application.__instance = self
@@ -57,11 +52,14 @@ class Application:
         super().__init__()  # Call super to make multiple inheritance work.
 
         self._app_name = name #type: str
+        self._app_display_name = app_display_name if app_display_name else name  # type: str
         self._version = version #type: str
         self._build_type = build_type #type: str
         self._is_debug_mode = is_debug_mode #type: bool
         self._is_headless = False #type: bool
         self._use_external_backend = False #type: bool
+
+        self._config_lock_filename = "{name}.lock".format(name = self._app_name) # type: str
 
         self._cli_args = None #type: argparse.Namespace
         self._cli_parser = argparse.ArgumentParser(prog = self._app_name, add_help = False) #type: argparse.ArgumentParser
@@ -70,6 +68,8 @@ class Application:
 
         self.default_theme = self._app_name  #type: str # Default theme is the application name
         self._default_language = "en_US" #type: str
+
+        self.change_log_url = "https://github.com/Ultimaker/Uranium" # Where to find a more detailed description of the recent updates.
 
         self._preferences_filename = None #type: str
         self._preferences = None #type: Preferences
@@ -162,7 +162,9 @@ class Application:
 
         self._plugin_registry = PluginRegistry(self)  #type: PluginRegistry
 
-        self._plugin_registry.addPluginLocation(os.path.join(self._app_install_dir, UraniumLibraryDir, "uranium"))
+        self._plugin_registry.addPluginLocation(os.path.join(self._app_install_dir, "lib", "uranium"))
+        self._plugin_registry.addPluginLocation(os.path.join(self._app_install_dir, "lib64", "uranium"))
+        self._plugin_registry.addPluginLocation(os.path.join(self._app_install_dir, "lib32", "uranium"))
         self._plugin_registry.addPluginLocation(os.path.join(os.path.dirname(sys.executable), "plugins"))
         self._plugin_registry.addPluginLocation(os.path.join(self._app_install_dir, "Resources", "uranium", "plugins"))
         self._plugin_registry.addPluginLocation(os.path.join(self._app_install_dir, "Resources", self._app_name, "plugins"))
@@ -189,8 +191,6 @@ class Application:
         self.showMessageSignal.connect(self.showMessage)
         self.hideMessageSignal.connect(self.hideMessage)
 
-        self.change_log_url = "https://github.com/Ultimaker/Uranium" #Where to find a more detailed description of the recent updates.
-
     def startSplashWindowPhase(self) -> None:
         pass
 
@@ -211,6 +211,10 @@ class Application:
     def getContainerRegistry(self):
         return self._container_registry
 
+    ##  Get the lock filename
+    def getApplicationLockFilename(self) -> str:
+        return self._config_lock_filename
+
     ##  Emitted when the application window was closed and we need to shut down the application
     applicationShuttingDown = Signal()
 
@@ -223,8 +227,9 @@ class Application:
     workspaceLoaded = Signal()
 
     def setGlobalContainerStack(self, stack: "ContainerStack") -> None:
-        self._global_container_stack = stack
-        self.globalContainerStackChanged.emit()
+        if self._global_container_stack != stack:
+            self._global_container_stack = stack
+            self.globalContainerStackChanged.emit()
 
     def getGlobalContainerStack(self) -> Optional["ContainerStack"]:
         return self._global_container_stack
@@ -288,6 +293,9 @@ class Application:
     #   \returns app_name \type{string}
     def getApplicationName(self) -> str:
         return self._app_name
+
+    def getApplicationDisplayName(self) -> str:
+        return self._app_display_name
 
     ##  Get the preferences.
     #   \return preferences \type{Preferences}
