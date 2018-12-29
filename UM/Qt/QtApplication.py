@@ -56,10 +56,10 @@ class UnsupportedVersionError(Exception):
     pass
 
 
-# Check PyQt version, we only support 5.4 or higher.
+# Check PyQt version, we only support 5.9 or higher.
 major, minor = PYQT_VERSION_STR.split(".")[0:2]
-if int(major) < 5 or (int(major) == 5 and int(minor) < 4):
-    raise UnsupportedVersionError("This application requires at least PyQt 5.4.0")
+if int(major) < 5 or (int(major) == 5 and int(minor) < 9):
+    raise UnsupportedVersionError("This application requires at least PyQt 5.9.0")
 
 
 ##  Application subclass that provides a Qt application object.
@@ -128,7 +128,7 @@ class QtApplication(QApplication, Application):
         self.setAttribute(Qt.AA_UseDesktopOpenGL)
         major_version, minor_version, profile = OpenGLContext.detectBestOpenGLVersion()
 
-        if major_version is None and minor_version is None and profile is None:
+        if major_version is None and minor_version is None and profile is None and not self.getIsHeadLess():
             Logger.log("e", "Startup failed because OpenGL version probing has failed: tried to create a 2.0 and 4.1 context. Exiting")
             QMessageBox.critical(None, "Failed to probe OpenGL",
                                  "Could not probe OpenGL. This program requires OpenGL 2.0 or higher. Please check your video card drivers.")
@@ -136,7 +136,8 @@ class QtApplication(QApplication, Application):
         else:
             opengl_version_str = OpenGLContext.versionAsText(major_version, minor_version, profile)
             Logger.log("d", "Detected most suitable OpenGL context version: %s", opengl_version_str)
-        OpenGLContext.setDefaultFormat(major_version, minor_version, profile = profile)
+        if not self.getIsHeadLess():
+            OpenGLContext.setDefaultFormat(major_version, minor_version, profile = profile)
 
         self._qml_import_paths.append(os.path.join(os.path.dirname(sys.executable), "qml"))
         self._qml_import_paths.append(os.path.join(self.getInstallPrefix(), "Resources", "qml"))
@@ -220,12 +221,13 @@ class QtApplication(QApplication, Application):
                 continue
             self._recent_files.append(QUrl.fromLocalFile(file_name))
 
-        # Initialize System tray icon and make it invisible because it is used only to show pop up messages
-        self._tray_icon = None
-        if self._tray_icon_name:
-            self._tray_icon = QIcon(Resources.getPath(Resources.Images, self._tray_icon_name))
-            self._tray_icon_widget = QSystemTrayIcon(self._tray_icon)
-            self._tray_icon_widget.setVisible(False)
+        if not self.getIsHeadLess():
+            # Initialize System tray icon and make it invisible because it is used only to show pop up messages
+            self._tray_icon = None
+            if self._tray_icon_name:
+                self._tray_icon = QIcon(Resources.getPath(Resources.Images, self._tray_icon_name))
+                self._tray_icon_widget = QSystemTrayIcon(self._tray_icon)
+                self._tray_icon_widget.setVisible(False)
 
     def initializeEngine(self) -> None:
         # TODO: Document native/qml import trickery
@@ -417,6 +419,9 @@ class QtApplication(QApplication, Application):
         Logger.log("d", "Shutting down %s", self.getApplicationName())
         self._is_shutting_down = True
 
+        # garbage collect tray icon so it gets properly closed before the application is closed
+        self._tray_icon_widget = None
+
         if save_data:
             try:
                 self.savePreferences()
@@ -460,7 +465,7 @@ class QtApplication(QApplication, Application):
 
     ## Create a class variable so we can manage the splash in the CrashHandler dialog when the Application instance
     # is not yet created, e.g. when an error occurs during the initialization
-    splash = None
+    splash = None  # type: Optional[QSplashScreen]
 
     def createSplash(self) -> None:
         if not self.getIsHeadLess():
