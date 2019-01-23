@@ -6,8 +6,22 @@ import os
 
 from UM.Application import Application
 from UM.PluginRegistry import PluginRegistry
-from UM.PluginError import PluginNotFoundError
+from UM.PluginError import PluginNotFoundError, InvalidMetaDataError
 from UM.Version import Version
+
+
+valid_plugin_json_data = [
+    "{\"name\": \"TestPlugin1\", \"api\": 5, \"version\": \"1.0.0\"}",
+    "{\"name\": \"TestPlugin2\", \"supported_sdk_versions\": [5], \"version\": \"1.0.0\"}",
+    "{\"name\": \"TestPlugin3\", \"api\": 5, \"supported_sdk_versions\": [5], \"version\": \"1.0.0\"}",
+    "{\"name\": \"TestPlugin3\", \"supported_sdk_versions\": [5, 6, \"2\"], \"version\": \"1.0.0\"}"
+]
+
+invalid_plugin_json_data = [
+    "",  # Invalid JSON
+    "{\"name\": \"TestPlugin1\", \"api\": 5}",  # No version
+    "{\"name\": \"TestPlugin2\", \"version\": \"1.0.0\"}"  # No API or supported_sdk_version set.
+]
 
 
 class FixtureRegistry(PluginRegistry):
@@ -40,10 +54,49 @@ class TestPluginRegistry():
         metadata = registry.getMetaData("TestPlugin")
         assert metadata == {"id": "TestPlugin",
                             "plugin": {"name": "TestPlugin",
-                                       "api": Version(5),
+                                       "api": 5,
+                                       "supported_sdk_versions": [Version(5)],
                                        "version": "1.0.0"},
                             "location": os.path.abspath(os.path.dirname(os.path.abspath(__file__)) + "/TestPlugin"),
                             }
+
+    def test_getPluginLocation(self, registry):
+        # Plugin is not loaded yet, so it should raise a KeyError
+        with pytest.raises(KeyError):
+            registry.getPluginPath("TestPlugin")
+
+        registry.loadPlugin("TestPlugin")
+        assert registry.getPluginPath("TestPlugin") == os.path.abspath(os.path.dirname(os.path.abspath(__file__)) + "/TestPlugin")
+
+    @pytest.mark.parametrize("plugin_data", valid_plugin_json_data)
+    def test_validPluginJson(self, plugin_data, registry):
+        registry._parsePluginInfo("beep", plugin_data, {})
+
+    @pytest.mark.parametrize("plugin_data", invalid_plugin_json_data)
+    def test_invalidPluginJson(self, plugin_data, registry):
+        with pytest.raises(InvalidMetaDataError):
+            registry._parsePluginInfo("beep", plugin_data, {})
+
+    def test_getInstalledPlugins(self, registry):
+        assert registry.getInstalledPlugins() == []  # Should be empty by default
+        registry.loadPlugins()
+        # All the plugins in this test should be marked as installed.
+        assert registry.getInstalledPlugins() == sorted(['OldTestPlugin', 'PluginNoVersionNumber', 'EmptyPlugin', 'TestPlugin', 'TestPlugin2'])
+
+    def test_isActivePlugin(self, registry):
+        # The plugins shouldn't be active yet (because they aren't loaded)
+        assert not registry.isActivePlugin("TestPlugin")
+        assert not registry.isActivePlugin("PluginNoVersionNumber")
+
+        registry.loadPlugins()  # Load them up
+
+        assert registry.isActivePlugin("TestPlugin")
+        # Doesn't have a version number, so should not be active.
+        assert not registry.isActivePlugin("PluginNoVersionNumber")
+
+        # Should no longer be active after we disable it.
+        registry.disablePlugin("TestPlugin")
+        assert not registry.isActivePlugin("TestPlugin")
 
     def test_load(self, registry):
         registry.loadPlugin("TestPlugin")
@@ -62,6 +115,9 @@ class TestPluginRegistry():
     def test_pluginNotFound(self, registry):
         with pytest.raises(PluginNotFoundError):
             registry.loadPlugin("NoSuchPlugin")
+
+        with pytest.raises(PluginNotFoundError):
+            registry.getPluginObject("ThisPluginDoesntExist!")
 
     def test_disabledPlugin(self, registry):
         # Disabled plugin should not be loaded
@@ -88,24 +144,24 @@ class TestPluginRegistry():
 
     def test_isPluginApiVersionCompatible(self, registry):
         # Same version is compatible
-        assert registry._isPluginApiVersionCompatible(registry._api_version)
+        assert registry.isPluginApiVersionCompatible(registry._api_version)
 
         # Lower major version is not compatible
         api_version = Version("4.0.0")
-        assert not registry._isPluginApiVersionCompatible(api_version)
+        assert not registry.isPluginApiVersionCompatible(api_version)
 
         # Higher major version is not compatible
         api_version = Version("6.0.0")
-        assert not registry._isPluginApiVersionCompatible(api_version)
+        assert not registry.isPluginApiVersionCompatible(api_version)
 
         # Same major version but higher minor version is not compatible
         api_version = Version("5.7.0")
-        assert not registry._isPluginApiVersionCompatible(api_version)
+        assert not registry.isPluginApiVersionCompatible(api_version)
 
         # Same major version but lower minor version is compatible
         api_version = Version("5.3.0")
-        assert registry._isPluginApiVersionCompatible(api_version)
+        assert registry.isPluginApiVersionCompatible(api_version)
 
         # Same major version but different patch version should not matter, it should be compatible
         api_version = Version("5.0.5")
-        assert registry._isPluginApiVersionCompatible(api_version)
+        assert registry.isPluginApiVersionCompatible(api_version)
