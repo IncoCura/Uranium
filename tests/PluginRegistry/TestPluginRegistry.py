@@ -1,5 +1,6 @@
 # Copyright (c) 2015 Ultimaker B.V.
 # Uranium is released under the terms of the LGPLv3 or higher.
+from unittest.mock import patch, mock_open
 
 import pytest
 import os
@@ -8,6 +9,7 @@ from UM.Application import Application
 from UM.PluginRegistry import PluginRegistry
 from UM.PluginError import PluginNotFoundError, InvalidMetaDataError
 from UM.Version import Version
+import json
 
 
 valid_plugin_json_data = [
@@ -30,6 +32,7 @@ class FixtureRegistry(PluginRegistry):
         PluginRegistry._PluginRegistry__instance = None
         super().__init__(application)
         self._api_version = Version("5.5.0")
+        self._plugin_config_filename = "test_file"
 
     def registerTestPlugin(self, plugin):
         self._test_plugin = plugin
@@ -50,15 +53,96 @@ def registry(application):
 
 
 class TestPluginRegistry():
+
+    def test_init(self, registry):
+        # Without loading anything, this shouldn't fail.
+        registry.initializeBeforePluginsAreLoaded()
+        registry.initializeAfterPluginsAreLoaded()
+
+    def test_savePluginData(self, registry):
+        with patch("builtins.open", mock_open()) as mock_file:
+            registry._savePluginData()
+            handle = mock_file()
+
+            writen_data = json.loads(handle.write.call_args[0][0])
+            expected_data = json.loads('{"disabled": [], "to_install": {}, "to_remove": []}')
+            assert writen_data == expected_data
+
+    def test_uninstallPlugin(self, registry):
+        with patch("builtins.open", mock_open()) as mock_file:
+            registry.uninstallPlugin("BLARG")  # It doesn't exist, so don't do anything.
+            handle = mock_file()
+            handle.write.assert_not_called()
+
+            registry.loadPlugins()
+            registry.uninstallPlugin("TestPlugin")
+            writen_data = json.loads(handle.write.call_args[0][0])
+            expected_data = json.loads('{"disabled": [], "to_install": {}, "to_remove": ["TestPlugin"]}')
+            assert writen_data == expected_data
+
+            assert "TestPlugin" not in registry.getInstalledPlugins()
+
+    def test_isBundledPlugin(self, registry):
+        assert registry.isBundledPlugin("NOPE") == False
+        # The result will be cached the second time, so ensure we test that path as well.
+        assert registry.isBundledPlugin("NOPE") == False
+
+    def test_addSupportedPluginExtension(self, registry):
+        registry.addSupportedPluginExtension("blarg", "zomg")
+        description_added = False
+        extension_added = False
+
+        for file_type in registry.supportedPluginExtensions:
+            if "blarg" in file_type:
+                extension_added = True
+            if "zomg" in file_type:
+                description_added = True
+
+        assert extension_added
+        assert description_added
+
+    def test_installPlugin(self, registry):
+        path = "file://" + os.path.abspath(os.path.dirname(os.path.abspath(__file__)) + "/UraniumExampleExtensionPlugin.umplugin")
+        result = registry.installPlugin(path)
+        assert result.get("status") == "ok"
+
+        # Ensure that the plugin is now marked as installed (although the actual installation happens on next restart!)
+        assert "UraniumExampleExtensionPlugin" in registry.getInstalledPlugins()
+
+    def test__installPlugin(self, registry):
+        # This tests that the unpacking of the plugin doesn't fail.
+        path = os.path.abspath(os.path.dirname(os.path.abspath(__file__)) + "/UraniumExampleExtensionPlugin.umplugin")
+        registry._installPlugin("UraniumExampleExtensionPlugin", path)
+
+    def test__subsetInDict(self, registry):
+        assert not registry._subsetInDict({}, {"test": "test"})
+        assert not registry._subsetInDict( {"test": "omg"}, {"test": "test"})
+        assert registry._subsetInDict({"test": "test", "zomg": "omg"}, {"test": "test"})
+
+    def test_requiredPlugins(self, registry):
+        assert registry.checkRequiredPlugins(["EmptyPlugin", "OldTestPlugin", "PluginNoVersionNumber", "TestPlugin", "TestPlugin2"])
+
+        assert not registry.checkRequiredPlugins(["TheNotLoadedPlugin"])
+
     def test_metaData(self, registry):
-        metadata = registry.getMetaData("TestPlugin")
-        assert metadata == {"id": "TestPlugin",
+        expected_metadata = {"id": "TestPlugin",
                             "plugin": {"name": "TestPlugin",
                                        "api": 5,
                                        "supported_sdk_versions": [Version(5)],
-                                       "version": "1.0.0"},
+                                       "version": "1.0.0",
+                                        "i18n-catalog": "bla",
+                                       "description": "test"},
                             "location": os.path.abspath(os.path.dirname(os.path.abspath(__file__)) + "/TestPlugin"),
                             }
+
+        metadata = registry.getMetaData("TestPlugin")
+        assert metadata == expected_metadata
+
+        all_metadata = registry.getAllMetaData()
+
+        for plugin_metadata in all_metadata:
+            if plugin_metadata.get("id") == "TestPlugin":
+                assert plugin_metadata == metadata
 
     def test_getPluginLocation(self, registry):
         # Plugin is not loaded yet, so it should raise a KeyError
@@ -98,10 +182,23 @@ class TestPluginRegistry():
         registry.disablePlugin("TestPlugin")
         assert not registry.isActivePlugin("TestPlugin")
 
+    def test_allActivePlugins(self, registry):
+        registry.loadPlugins()  # Load them up
+        all_active_plugin_ids = registry.getActivePlugins()
+
+        all_plugins_found = True
+        for plugin_id in ['EmptyPlugin', 'TestPlugin', 'TestPlugin2']:
+            if plugin_id not in all_active_plugin_ids:
+                all_plugins_found = False
+
+        assert all_plugins_found
+
     def test_load(self, registry):
         registry.loadPlugin("TestPlugin")
 
         assert registry.getTestPlugin().getPluginId() == "TestPlugin"
+
+        assert registry.getPluginObject("TestPlugin") == registry.getTestPlugin()
     
     def test_loadNested(self, registry):
         registry.loadPlugin("TestPlugin2")

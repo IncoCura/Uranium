@@ -1,8 +1,9 @@
-# Copyright (c) 2015 Ultimaker B.V.
+# Copyright (c) 2019 Ultimaker B.V.
 # Uranium is released under the terms of the LGPLv3 or higher.
+
 from typing import Optional, Union, Dict
 
-from PyQt5.QtCore import QUrl, QObject
+from PyQt5.QtCore import QUrl, QObject, pyqtProperty
 
 from UM.View.Renderer import Renderer
 from UM.PluginObject import PluginObject
@@ -22,6 +23,10 @@ class View(QObject, PluginObject):
         self._controller = UM.Application.Application.getInstance().getController()  # type: Controller
         self._components = {}  # type: Dict[str, QUrl]
 
+    @pyqtProperty(str, constant = True)
+    def name(self) -> str:
+        return self.getPluginId()
+
     ##  Add a QML component that is provided by this View.
     def addDisplayComponent(self, name: str, source: Union[str, QUrl]) -> None:
         if type(source) == str:
@@ -38,12 +43,6 @@ class View(QObject, PluginObject):
     #   \sa Controller
     def getController(self):
         return self._controller
-
-    ##  Set the controller object associated with this View.
-    #   \param controller The controller object to use.
-    #   \sa Controller
-    def setController(self, controller: "Controller") -> None:
-        self._controller = controller
 
     ##  Get the Renderer instance for this View.
     def getRenderer(self):

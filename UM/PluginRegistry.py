@@ -146,7 +146,7 @@ class PluginRegistry(QObject):
         except:
             # Since we're writing to file (and waiting for a lock), there are a few things that can go wrong.
             # There is no need to crash the application for this, but it is a failure that we want to log.
-            Logger.log("e", "Unable to save the plugin data.")
+            Logger.logException("e", "Unable to save the plugin data.")
 
     # TODO:
     # - [ ] Improve how metadata is stored. It should not be in the 'plugin' prop
@@ -164,29 +164,6 @@ class PluginRegistry(QObject):
     #===============================================================================
     # PUBLIC METHODS
     #===============================================================================
-
-    #   If used, this can add available plugins (from a remote server) to the
-    #   registry. Cura uses this method to add 3rd-party plugins.
-    def addExternalPlugins(self, plugin_list: List[Dict[str, Any]]) -> None:
-        for plugin in plugin_list:
-            # Add the plugin id to the all plugins list if not already there:
-            if plugin["id"] not in self._all_plugins:
-                self._all_plugins.append(plugin["id"])
-
-                # Does this look redundant?
-                # It is. Should be simplfied in the future but changing it right
-                # now may break other functionality.
-                if plugin["id"] not in self._plugins_available:
-                    self._plugins_available.append(plugin["id"])
-            self._metadata[plugin["id"]] = {
-                "id": plugin["id"],
-                "plugin": plugin,
-                "update_url": plugin["file_location"]
-            }
-
-            # Keep a note of plugins which are not Ultimaker plugins:
-            if plugin["id"] not in self._plugins_external:
-                self._plugins_external.append(plugin["id"])
 
     #   Add a plugin location to the list of locations to search:
     def addPluginLocation(self, location: str) -> None:
@@ -436,6 +413,9 @@ class PluginRegistry(QObject):
         result = {"status": "error", "message": "", "id": plugin_id}
         success_message = i18n_catalog.i18nc("@info:status", "The plugin has been removed.\nPlease restart {0} to finish uninstall.", self._application.getApplicationName())
 
+        if plugin_id not in self._plugins_installed:
+            return result
+
         in_to_install = plugin_id in self._plugins_to_install
         if in_to_install:
             del self._plugins_to_install[plugin_id]
@@ -509,7 +489,10 @@ class PluginRegistry(QObject):
                         break
         except zipfile.BadZipFile:
             Logger.logException("e", "Failed to load plug-in file. The zip archive seems to be corrupt.")
-            return None #Signals that loading this failed.
+            return None  # Signals that loading this failed.
+        except FileNotFoundError:
+            Logger.logException("e", "Failed to load plug-in file as we were unable to find it.")
+            return None  # Signals that loading this failed.
         return plugin_id
 
     #   Returns a list of all possible plugin ids in the plugin locations:
