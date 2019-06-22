@@ -51,6 +51,14 @@ def _toFloatConversion(value: str) -> float:
     except:
         return 0
 
+##  Conversion from string to integer.
+#
+#   \param value The string representation of an integer.
+def _toIntConversion(value):
+    try:
+        return ast.literal_eval(value)
+    except SyntaxError:
+        return 0
 
 ##  Defines a single Setting with its properties.
 #
@@ -404,12 +412,8 @@ class SettingDefinition:
     #
     #   \return A list of all the names of supported properties.
     @classmethod
-    def getPropertyNames(cls, type: DefinitionPropertyType = None) -> List[str]:
-        result = []
-        for key, value in cls.__property_definitions.items():
-            if not type or value["type"] == type:
-                result.append(key)
-        return result
+    def getPropertyNames(cls, def_type: DefinitionPropertyType = None) -> List[str]:
+        return [key for key, value in cls.__property_definitions.items() if not def_type or value["type"] == def_type]
 
     ##  Check if a property with the specified name is defined as a supported property.
     #
@@ -624,36 +628,10 @@ class SettingDefinition:
         # A dictionary of key-value pairs that provide the options for an enum type setting. The key is the actual value, the value is a translated display string.
         "options": {"type": DefinitionPropertyType.Any, "required": False, "read_only": True, "default": {}, "depends_on" : None},
         # Optional comments that apply to the setting. Will be ignored.
-        "comments": {"type": DefinitionPropertyType.String, "required": False, "read_only": True, "default": "", "depends_on" : None}
+        "comments": {"type": DefinitionPropertyType.String, "required": False, "read_only": True, "default": "", "depends_on" : None},
+        # Indicates if this string setting is allowed to have empty value. This can only be used for string settings.
+        "allow_empty": {"type": DefinitionPropertyType.Function, "required": False, "read_only": True, "default": True, "depends_on": None},
     }   # type: Dict[str, Dict[str, Any]]
-
-    ##  Conversion from string to integer.
-    #
-    #   \param value The string representation of an integer.
-    def _toIntConversion(value):
-        try:
-            return ast.literal_eval(value)
-        except SyntaxError:
-            return 0
-
-    ## Conversion of string to float.
-    def _toFloatConversion(value):
-        ## Ensure that all , are replaced with . (so they are seen as floats)
-        value = value.replace(",", ".")
-
-        def stripLeading0(matchobj):
-            return matchobj.group(0).lstrip("0")
-
-        ## Literal eval does not like "02" as a value, but users see this as "2".
-        ## We therefore look numbers with leading "0", provided they are not used in variable names
-        ## example: "test02 * 20" should not be changed, but "test * 02 * 20" should be changed (into "test * 2 * 20")
-        regex_pattern = '(?<!\.|\w|\d)0+(\d+)'
-        value = re.sub(regex_pattern, stripLeading0 ,value)
-
-        try:
-            return ast.literal_eval(value)
-        except:
-            return 0
 
     __type_definitions = {
         # An integer value
@@ -663,7 +641,7 @@ class SettingDefinition:
         # Special case setting; Doesn't have a value. Display purposes only.
         "category": {"from": None, "to": None, "validator": None},
         # A string value
-        "str": {"from": None, "to": None, "validator": None},
+        "str": {"from": None, "to": None, "validator": Validator},
         # An enumeration
         "enum": {"from": None, "to": None, "validator": None},
         # A floating point value

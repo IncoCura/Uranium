@@ -62,22 +62,6 @@ class Scene:
             else:
                 self._connectSignalsRoot()
 
-    ##  Acquire the global scene lock.
-    #
-    #   This will prevent any read or write actions on the scene from other threads,
-    #   assuming those threads also properly acquire the lock. Most notably, this
-    #   prevents the rendering thread from rendering the scene while it is changing.
-    #   Deprecated, use getSceneLock() instead.
-    @deprecated("Please use the getSceneLock instead", "3.3")
-    def acquireLock(self) -> None:
-        self._lock.acquire()
-
-    ##  Release the global scene lock.
-    #   Deprecated, use getSceneLock() instead.
-    @deprecated("Please use the getSceneLock instead", "3.3")
-    def releaseLock(self) -> None:
-        self._lock.release()
-
     ##  Gets the global scene lock.
     #
     #   Use this lock to prevent any read or write actions on the scene from other threads,
@@ -117,8 +101,11 @@ class Scene:
     #   \param name The name of the camera to use.
     def setActiveCamera(self, name: str) -> None:
         camera = self.findCamera(name)
-        if camera:
+        if camera and camera != self._active_camera:
+            if self._active_camera:
+                self._active_camera.perspectiveChanged.disconnect(self.sceneChanged)
             self._active_camera = camera
+            self._active_camera.perspectiveChanged.connect(self.sceneChanged)
         else:
             Logger.log("w", "Couldn't find camera with name [%s] to activate!" % name)
 

@@ -50,11 +50,15 @@ class MimeType:
         return self.__comment
 
     ##  The list of file name suffixes for the MIME type.
+    #
+    #   Example: ["cfg", "tar.gz"]
     @property
     def suffixes(self) -> List[str]:
         return self.__suffixes
 
     ##  The preferred file name suffix for the MIME type.
+    #
+    #   Example: "cfg" or "tar.gz".
     @property
     def preferredSuffix(self) -> str:
         return self.__preferred_suffix
@@ -182,6 +186,11 @@ class MimeTypeDatabase:
     @classmethod
     def addMimeType(cls, mime_type: MimeType) -> None:
         cls.__custom_mimetypes.append(mime_type)
+
+    @classmethod
+    def removeMimeType(cls, mime_type: MimeType) -> None:
+        if mime_type in cls.__custom_mimetypes:
+            cls.__custom_mimetypes.remove(mime_type)
 
     __system_database = QMimeDatabase()
     __custom_mimetypes = [] # type: List[MimeType]

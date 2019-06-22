@@ -3,6 +3,7 @@
 
 import os
 import platform
+import unittest
 from unittest import TestCase
 import tempfile
 import pytest
@@ -15,19 +16,15 @@ class TestResources(TestCase):
     #
     # getConfigStorageRootPath() tests
     #
+    @unittest.skipIf(platform.system() != "Windows", "Not on Windows")
     def test_getConfigStorageRootPath_Windows(self):
-        if platform.system() != "Windows":
-            self.skipTest("not on Windows")
-
         config_root_path = Resources._getConfigStorageRootPath()
         expected_config_root_path = os.getenv("APPDATA")
         self.assertEqual(expected_config_root_path, config_root_path,
                          "expected %s, got %s" % (expected_config_root_path, config_root_path))
 
+    @unittest.skipIf(platform.system() != "Linux", "Not on linux")
     def test_getConfigStorageRootPath_Linux(self):
-        if platform.system() != "Linux":
-            self.skipTest("not on Linux")
-
         # no XDG_CONFIG_HOME defined
         if "XDG_CONFIG_HOME" in os.environ:
             del os.environ["XDG_CONFIG_HOME"]
@@ -43,29 +40,20 @@ class TestResources(TestCase):
         self.assertEqual(expected_config_root_path, config_root_path,
                          "expected %s, got %s" % (expected_config_root_path, config_root_path))
 
+    @unittest.skipIf(platform.system() != "Darwin", "Not on mac")
     def test_getConfigStorageRootPath_Mac(self):
-        if platform.system() != "Darwin":
-            self.skipTest("not on mac")
-
         config_root_path = Resources._getConfigStorageRootPath()
         expected_config_root_path = os.path.expanduser("~/Library/Application Support")
         self.assertEqual(expected_config_root_path, config_root_path,
                          "expected %s, got %s" % (expected_config_root_path, config_root_path))
 
-    #
-    # getDataStorageRootPath() tests
-    #
+    @unittest.skipIf(platform.system() != "Windows", "Not on Windows")
     def test_getDataStorageRootPath_Windows(self):
-        if platform.system() != "Windows":
-            self.skipTest("not on Windows")
-
         data_root_path = Resources._getDataStorageRootPath()
         self.assertIsNone(data_root_path, "expected None, got %s" % data_root_path)
 
+    @unittest.skipIf(platform.system() != "Linux", "Not on linux")
     def test_getDataStorageRootPath_Linux(self):
-        if platform.system() != "Linux":
-            self.skipTest("not on Linux")
-
         # no XDG_CONFIG_HOME defined
         if "XDG_DATA_HOME" in os.environ:
             del os.environ["XDG_DATA_HOME"]
@@ -81,16 +69,12 @@ class TestResources(TestCase):
         self.assertEqual(expected_data_root_path, data_root_path,
                          "expected %s, got %s" % (expected_data_root_path, data_root_path))
 
+    @unittest.skipIf(platform.system() != "Darwin", "Not on mac")
     def test_getDataStorageRootPath_Mac(self):
-        if platform.system() != "Darwin":
-            self.skipTest("not on mac")
-
         data_root_path = Resources._getDataStorageRootPath()
         self.assertIsNone(data_root_path, "expected None, got %s" % data_root_path)
 
-    #
-    # getCacheStorageRootPath() tests
-    #
+    @unittest.skipIf(platform.system() != "Windows", "Not on Windows")
     def test_getCacheStorageRootPath_Windows(self):
         if platform.system() != "Windows":
             self.skipTest("not on Windows")
@@ -100,53 +84,53 @@ class TestResources(TestCase):
         self.assertEqual(expected_cache_root_path, cache_root_path,
                          "expected %s, got %s" % (expected_cache_root_path, cache_root_path))
 
+    @unittest.skipIf(platform.system() != "Linux", "Not on linux")
     def test_getCacheStorageRootPath_Linux(self):
-        if platform.system() != "Linux":
-            self.skipTest("not on Linux")
-
         cache_root_path = Resources._getCacheStorageRootPath()
         expected_cache_root_path = os.path.expanduser("~/.cache")
         self.assertEqual(expected_cache_root_path, cache_root_path,
                          "expected %s, got %s" % (expected_cache_root_path, cache_root_path))
 
+    @unittest.skipIf(platform.system() != "Darwin", "Not on mac")
     def test_getCacheStorageRootPath_Mac(self):
-        if platform.system() != "Darwin":
-            self.skipTest("not on mac")
-
         cache_root_path = Resources._getCacheStorageRootPath()
         self.assertIsNone("expected None, got %s" % cache_root_path)
 
+    @unittest.skipIf(platform.system() != "Linux", "Not on linux")
     def test_getPossibleConfigStorageRootPathList_Linux(self):
-        if platform.system() != "Linux":
-            self.skipTest("not on Linux")
-
         # We didn't add any paths, so it will use defaults
         assert Resources._getPossibleConfigStorageRootPathList() == ['/tmp/test']
 
+    @unittest.skipIf(platform.system() != "Linux", "Not on linux")
     def test_getPossibleDataStorageRootPathList_Linux(self):
-        if platform.system() != "Linux":
-            self.skipTest("not on Linux")
         # We didn't add any paths, so it will use defaults
         assert Resources._getPossibleDataStorageRootPathList() == ['/tmp/test']
 
     def test_factoryReset(self):
+        # FIXME: This is a temporary workaround. A proper fix should be to make the home directory configurable so a
+        #        unique temporary directory can be used for each test and it can removed afterwards.
+        # HACK: Record the number of files and directories in the data storage directory before the factory reset,
+        # so after the reset, we can compare if there's a new ZIP file being created. Note that this will not always
+        # work, especially when there are multiple tests running on the same host at the same time.
+        original_filenames = os.listdir(os.path.dirname(Resources.getDataStoragePath()))
+
         Resources.factoryReset()
         # Check if the data is deleted!
         assert len(os.listdir(Resources.getDataStoragePath())) == 0
 
         # The data folder should still be there, but it should also have created a zip with the data it deleted.
-        assert len(os.listdir(os.path.dirname(Resources.getDataStoragePath()))) == 2
+        new_filenames = os.listdir(os.path.dirname(Resources.getDataStoragePath()))
+        assert len(new_filenames) - len(original_filenames) == 1
 
         # Clean up after our ass.
         folder = os.path.dirname(Resources.getDataStoragePath())
         for file in os.listdir(folder):
             file_path = os.path.join(folder, file)
-            print(file_path)
             try:
                 os.unlink(file_path)
             except:
                 pass
-        folder =  os.path.dirname(Resources.getDataStoragePath())
+        folder = os.path.dirname(Resources.getDataStoragePath())
         for file in os.listdir(folder):
             file_path = os.path.join(folder, file)
             try:
@@ -158,10 +142,8 @@ class TestResources(TestCase):
         # Just don't fail.
         Resources._copyLatestDirsIfPresent()
 
+    @unittest.skipIf(platform.system() != "Linux", "Not on linux")
     def test_getStoragePathForType_Linux(self):
-        if platform.system() != "Linux":
-            self.skipTest("not on Linux")
-
         with pytest.raises(ResourceTypeError):
             # No types have been added, so this should break!
             Resources.getAllResourcesOfType(0)
