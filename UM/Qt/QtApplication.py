@@ -7,7 +7,8 @@ import signal
 from typing import List
 from typing import Any, cast, Dict, Optional
 
-from PyQt5.QtCore import Qt, QCoreApplication, QEvent, QUrl, pyqtProperty, pyqtSignal, pyqtSlot, QT_VERSION_STR, PYQT_VERSION_STR
+from PyQt5.QtCore import Qt, QCoreApplication, QEvent, QUrl, pyqtProperty, pyqtSignal, QT_VERSION_STR, PYQT_VERSION_STR
+from UM.FlameProfiler import pyqtSlot
 from PyQt5.QtQml import QQmlApplicationEngine, QQmlComponent, QQmlContext, QQmlError
 from PyQt5.QtWidgets import QApplication, QSplashScreen, QMessageBox, QSystemTrayIcon
 from PyQt5.QtGui import QIcon, QPixmap, QFontMetrics
@@ -131,10 +132,11 @@ class QtApplication(QApplication, Application):
         self.setAttribute(Qt.AA_UseDesktopOpenGL)
         major_version, minor_version, profile = OpenGLContext.detectBestOpenGLVersion()
 
-        if major_version is None and minor_version is None and profile is None and not self.getIsHeadLess():
+        if major_version is None or minor_version is None or profile is None:
             Logger.log("e", "Startup failed because OpenGL version probing has failed: tried to create a 2.0 and 4.1 context. Exiting")
-            QMessageBox.critical(None, "Failed to probe OpenGL",
-                                 "Could not probe OpenGL. This program requires OpenGL 2.0 or higher. Please check your video card drivers.")
+            if not self.getIsHeadLess():
+                QMessageBox.critical(None, "Failed to probe OpenGL",
+                                     "Could not probe OpenGL. This program requires OpenGL 2.0 or higher. Please check your video card drivers.")
             sys.exit(1)
         else:
             opengl_version_str = OpenGLContext.versionAsText(major_version, minor_version, profile)
@@ -154,7 +156,8 @@ class QtApplication(QApplication, Application):
 
     def startSplashWindowPhase(self) -> None:
         super().startSplashWindowPhase()
-
+        i18n_catalog = i18nCatalog("uranium")
+        self.showSplashMessage(i18n_catalog.i18nc("@info:progress", "Initializing package manager..."))
         self._package_manager.initialize()
 
         # Read preferences here (upgrade won't work) to get the language in use, so the splash window can be shown in
@@ -168,8 +171,6 @@ class QtApplication(QApplication, Application):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         # This is done here as a lot of plugins require a correct gl context. If you want to change the framework,
         # these checks need to be done in your <framework>Application.py class __init__().
-
-        i18n_catalog = i18nCatalog("uranium")
 
         self._configuration_error_message = ConfigurationErrorMessage(self,
               i18n_catalog.i18nc("@info:status", "Your configuration seems to be corrupt."),
@@ -190,6 +191,7 @@ class QtApplication(QApplication, Application):
 
         # Load preferences again because before we have loaded the plugins, we don't have the upgrade routine for
         # the preferences file. Now that we have, load the preferences file again so it can be upgraded and loaded.
+        self.showSplashMessage(i18n_catalog.i18nc("@info:progress", "Loading preferences..."))
         try:
             preferences_filename = Resources.getPath(Resources.Preferences, self._app_name + ".cfg")
             with open(preferences_filename, "r", encoding = "utf-8") as f:
@@ -201,8 +203,8 @@ class QtApplication(QApplication, Application):
         except (FileNotFoundError, UnicodeDecodeError):
             Logger.log("i", "The preferences file cannot be found or it is corrupted, so we will use default values")
 
+        self.processEvents()
         # Force the configuration file to be written again since the list of plugins to remove maybe changed
-        self.showSplashMessage(i18n_catalog.i18nc("@info:progress", "Loading preferences..."))
         try:
             self._preferences_filename = Resources.getPath(Resources.Preferences, self._app_name + ".cfg")
             self._preferences.readFromFile(self._preferences_filename)
@@ -247,6 +249,7 @@ class QtApplication(QApplication, Application):
     def initializeEngine(self) -> None:
         # TODO: Document native/qml import trickery
         self._qml_engine = QQmlApplicationEngine(self)
+        self.processEvents()
         self._qml_engine.setOutputWarningsToStandardError(False)
         self._qml_engine.warnings.connect(self.__onQmlWarning)
 
@@ -257,11 +260,19 @@ class QtApplication(QApplication, Application):
             self._qml_engine.addImportPath(os.path.join(os.path.dirname(__file__), "qml"))
 
         self._qml_engine.rootContext().setContextProperty("QT_VERSION_STR", QT_VERSION_STR)
+        self.processEvents()
         self._qml_engine.rootContext().setContextProperty("screenScaleFactor", self._screenScaleFactor())
 
         self.registerObjects(self._qml_engine)
 
         Bindings.register()
+
+        # Preload theme. The theme will be loaded on first use, which will incur a ~0.1s freeze on the MainThread.
+        # Do it here, while the splash screen is shown. Also makes this freeze explicit and traceable.
+        self.getTheme()
+        self.processEvents()
+
+        self.showSplashMessage(self._i18n_catalog.i18nc("@info:progress", "Loading UI..."))
         self._qml_engine.load(self._main_qml)
         self.engineCreatedSignal.emit()
 
@@ -395,7 +406,6 @@ class QtApplication(QApplication, Application):
             self._main_window = window
             if self._main_window is not None:
                 self._main_window.windowStateChanged.connect(self._onMainWindowStateChanged)
-
             self.mainWindowChanged.emit()
 
     def setVisible(self, visible: bool) -> None:
@@ -499,8 +509,9 @@ class QtApplication(QApplication, Application):
             self.createSplash()
         
         if QtApplication.splash:
-            QtApplication.splash.showMessage(message, Qt.AlignHCenter | Qt.AlignVCenter)
-            self.processEvents()
+            self.processEvents()  # Process events from previous loading phase before updating the message
+            QtApplication.splash.showMessage(message, Qt.AlignHCenter | Qt.AlignVCenter)  # Now update the message
+            self.processEvents()  # And make sure it is immediately visible
         elif self.getIsHeadLess():
             Logger.log("d", message)
 
@@ -575,6 +586,10 @@ class QtApplication(QApplication, Application):
             # round the font pixel ratio to quarters
             fontPixelRatio = int(fontPixelRatio * 4) / 4
             return fontPixelRatio
+
+    @pyqtProperty(str, constant=True)
+    def applicationDisplayName(self) -> str:
+        return self.getApplicationDisplayName()
 
 
 ##  Internal.

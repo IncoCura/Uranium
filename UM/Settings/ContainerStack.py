@@ -52,7 +52,7 @@ MimeTypeDatabase.addMimeType(
 ##  A stack of setting containers to handle setting value retrieval.
 @signalemitter
 class ContainerStack(QObject, ContainerInterface, PluginObject):
-    Version = 4 # type: int
+    Version = 4  # type: int
 
     ##  Constructor
     #
@@ -70,11 +70,11 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
         self._containers = []  # type: List[ContainerInterface]
         self._next_stack = None  # type: Optional[ContainerStack]
         self._read_only = False  # type: bool
-        self._dirty = True  # type: bool
+        self._dirty = False  # type: bool
         self._path = ""  # type: str
-        self._postponed_emits = [] #type: List[Tuple[Signal, ContainerInterface]] # gets filled with 2-tuples: signal, signal_argument(s)
+        self._postponed_emits = []  # type: List[Tuple[Signal, ContainerInterface]] # gets filled with 2-tuples: signal, signal_argument(s)
 
-        self._property_changes = {} #type: Dict[str, Set[str]]
+        self._property_changes = {}  # type: Dict[str, Set[str]]
         self._emit_property_changed_queued = False  # type: bool
 
     ##  For pickle support
@@ -159,7 +159,7 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
     ##  \copydoc ContainerInterface::getMetaDataEntry
     #
     #   Reimplemented from ContainerInterface
-    def getMetaDataEntry(self, entry: str, default = None) -> Any:
+    def getMetaDataEntry(self, entry: str, default: Any = None) -> Any:
         value = self._metadata.get(entry, None)
 
         if value is None:
@@ -241,15 +241,21 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
             if start_index >= len(self._containers):
                 return None
             containers = self._containers[start_index:]
-
-        for container in containers:
-            if skip_until_container and container.getId() != skip_until_container:
-                continue #Skip.
-            skip_until_container = None #When we find the container, stop skipping.
-
-            value = container.getProperty(key, property_name, context)
+        if property_name not in ["value", "state", "validationState"]:
+            # Value, state & validationState can be changed by instanceContainer, the rest cant. Ask the definition
+            # right away
+            value = containers[-1].getProperty(key, property_name, context)
             if value is not None:
                 return value
+        else:
+            for container in containers:
+                if skip_until_container and container.getId() != skip_until_container:
+                    continue #Skip.
+                skip_until_container = None #When we find the container, stop skipping.
+
+                value = container.getProperty(key, property_name, context)
+                if value is not None:
+                    return value
 
         if self._next_stack and use_next:
             return self._next_stack.getRawProperty(key, property_name, context = context,
@@ -284,7 +290,7 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
     #   Reimplemented from ContainerInterface
     #
     #   TODO: Expand documentation here, include the fact that this should _not_ include all containers
-    def serialize(self, ignored_metadata_keys: Optional[set] = None) -> str:
+    def serialize(self, ignored_metadata_keys: Optional[Set[str]] = None) -> str:
         parser = configparser.ConfigParser(interpolation = None, empty_lines_in_values = False)
 
         parser["general"] = {}
@@ -584,6 +590,7 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
         container.propertyChanged.connect(self._collectPropertyChanges)
         self._containers.insert(index, container)
         self.containersChanged.emit(container)
+        self._dirty = True
 
     ##  Replace a container in the stack.
     #
@@ -602,6 +609,7 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
         self._containers[index].propertyChanged.disconnect(self._collectPropertyChanges)
         container.propertyChanged.connect(self._collectPropertyChanges)
         self._containers[index] = container
+        self._dirty = True
         if postpone_emit:
             # send it using sendPostponedEmits
             self._postponed_emits.append((self.containersChanged, container))
@@ -618,6 +626,7 @@ class ContainerStack(QObject, ContainerInterface, PluginObject):
             raise IndexError
         try:
             container = self._containers[index]
+            self._dirty = True
             container.propertyChanged.disconnect(self._collectPropertyChanges)
             del self._containers[index]
             self.containersChanged.emit(container)
